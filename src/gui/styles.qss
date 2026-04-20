@@ -1,0 +1,26 @@
+/* src/gui/styles.qss */
+QMainWindow {
+    background-color: #f5f5f5;
+}
+
+QScrollArea {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+QSplitter::handle {
+    background-color: #d0d0d0;
+    width: 2px;
+}
+QSplitter::handle:hover {
+    background-color: #007acc;
+}
+
+QPushButton {
+    font-size: 13px;
+}
+
+QLineEdit {
+    font-size: 13px;
+}

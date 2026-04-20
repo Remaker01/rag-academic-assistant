@@ -1,0 +1,25 @@
+﻿# 核心框架
+langchain
+langchain-community
+langchain-core
+
+# 向量与检索
+sentence-transformers
+faiss-cpu
+
+# 大模型 API
+openai
+
+# 文档解析
+pypdf
+pdfplumber
+unstructured
+
+# GUI
+PySide6
+
+# 辅助工具
+python-dotenv
+tiktoken
+rich
+markdown
