@@ -23,3 +23,6 @@ python-dotenv
 tiktoken
 rich
 markdown
+
+fastapi
+uvicorn

@@ -19,10 +19,10 @@ from PySide6.QtWidgets import (
 from src.agent import AgentManager
 from src.core import get_default_pipeline
 from src.utils import setup_logger
+from src import __version__
 
 logger = setup_logger("gui")
 
-__version__ = "1.0.0beta1"
 # ==================== 工作线程（保持不变） ====================
 class PDFImportWorker(QObject):
     started = QtSignal()

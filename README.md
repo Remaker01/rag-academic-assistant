@@ -10,4 +10,4 @@ DEEPSEEK_API_KEY=your_api_key
 
 再运行`pip install -r requirements.txt`安装依赖
 
-最后运行main.py
+最后运行`main.py`启动客户端界面，或`run_api.py`运行后端服务。

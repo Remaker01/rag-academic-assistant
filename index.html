@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学术问答助手 API 测试</title>
+    <!-- 可选 Bootstrap 美化，也可只用原生样式 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; background-color: #f8f9fa; }
+        .container { max-width: 900px; }
+        .card { margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .response-area { background-color: #f4f4f4; padding: 12px; border-radius: 6px; white-space: pre-wrap; font-family: monospace; max-height: 300px; overflow-y: auto; }
+        .badge-index { margin-right: 5px; cursor: pointer; }
+        #chatHistory { border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; background: white; height: 350px; overflow-y: auto; }
+        .msg { margin-bottom: 15px; }
+        .msg-user { text-align: right; }
+        .msg-user .bubble { background-color: #007bff; color: white; border-radius: 18px 18px 4px 18px; padding: 10px 15px; display: inline-block; max-width: 80%; }
+        .msg-assistant .bubble { background-color: #e9ecef; color: black; border-radius: 18px 18px 18px 4px; padding: 10px 15px; display: inline-block; max-width: 80%; }
+        .msg-system { text-align: center; color: #6c757d; font-style: italic; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="mb-4">📚 学术问答助手 API 测试面板</h1>
+
+    <!-- API 配置 -->
+    <div class="card">
+        <div class="card-header bg-primary text-white">API 配置</div>
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <label for="apiBaseUrl" class="col-form-label">API 地址：</label>
+                </div>
+                <div class="col">
+                    <input type="text" class="form-control" id="apiBaseUrl" value="http://127.0.0.1:8000">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-outline-primary" id="checkHealthBtn">检查健康状态</button>
+                </div>
+                <div class="col-auto">
+                    <span id="healthStatus" class="badge bg-secondary">未检查</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 索引管理 -->
+    <div class="card">
+        <div class="card-header bg-info text-white">📁 索引管理</div>
+        <div class="card-body">
+            <div class="mb-3">
+                <button class="btn btn-outline-info" id="listIndicesBtn">刷新索引列表</button>
+                <span class="ms-2" id="indicesList"></span>
+            </div>
+            <hr>
+            <div class="row g-2">
+                <div class="col-md-8">
+                    <input type="text" class="form-control" id="pdfPathInput" placeholder="PDF 文件绝对路径，例如 C:/papers/example.pdf">
+                </div>
+                <div class="col-md-4">
+                    <input type="text" class="form-control" id="indexNameInput" placeholder="索引名称 (可选)">
+                </div>
+                <div class="col-md-12 mt-2">
+                    <button class="btn btn-success" id="importPdfBtn">导入 PDF</button>
+                </div>
+            </div>
+            <div id="importResult" class="response-area mt-3" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- 对话区域 -->
+    <div class="card">
+        <div class="card-header bg-success text-white">💬 对话测试</div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label>会话 ID：</label>
+                <input type="text" class="form-control form-control-sm d-inline-block w-auto" id="sessionIdInput" value="test_user_001">
+                <button class="btn btn-sm btn-outline-warning ms-2" id="resetMemoryBtn">重置记忆</button>
+            </div>
+            <div id="chatHistory">
+                <div class="msg-system">欢迎！选择一个索引后开始对话。</div>
+            </div>
+            <div class="input-group mt-3">
+                <input type="text" class="form-control" id="questionInput" placeholder="输入你的问题..." disabled>
+                <button class="btn btn-primary" id="sendQuestionBtn" disabled>发送</button>
+            </div>
+            <div class="mt-2">
+                <small>当前使用索引：<span id="currentIndexDisplay">未选择</span></small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // ---------- 全局变量 ----------
+        let currentIndex = null;          // 当前选中的索引名称
+        const $apiBase = $('#apiBaseUrl');
+        const $healthStatus = $('#healthStatus');
+        const $indicesList = $('#indicesList');
+        const $importResult = $('#importResult');
+        const $chatHistory = $('#chatHistory');
+        const $questionInput = $('#questionInput');
+        const $sendBtn = $('#sendQuestionBtn');
+        const $currentIndexDisplay = $('#currentIndexDisplay');
+        const $sessionIdInput = $('#sessionIdInput');
+
+        // 辅助函数：显示消息
+        function addSystemMessage(text) {
+            $chatHistory.append(`<div class="msg-system">${text}</div>`);
+            scrollChatToBottom();
+        }
+
+        function addUserMessage(text) {
+            $chatHistory.append(`<div class="msg msg-user"><div class="bubble">${escapeHtml(text)}</div></div>`);
+            scrollChatToBottom();
+        }
+
+        function addAssistantMessage(text) {
+            // 简单处理换行
+            let formatted = escapeHtml(text).replace(/\n/g, '<br>');
+            $chatHistory.append(`<div class="msg msg-assistant"><div class="bubble">${formatted}</div></div>`);
+            scrollChatToBottom();
+        }
+
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"]/g, function(c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function scrollChatToBottom() {
+            $chatHistory.scrollTop($chatHistory[0].scrollHeight);
+        }
+
+        // 更新 UI 启用/禁用
+        function setChatEnabled(enabled) {
+            $questionInput.prop('disabled', !enabled);
+            $sendBtn.prop('disabled', !enabled);
+            if (enabled) {
+                $currentIndexDisplay.text(currentIndex);
+            } else {
+                $currentIndexDisplay.text('未选择');
+            }
+        }
+
+        // ---------- API 调用封装 ----------
+        function apiRequest(endpoint, method, data) {
+            return $.ajax({
+                url: $apiBase.val().trim() + endpoint,
+                method: method,
+                contentType: 'application/json',
+                data: data ? JSON.stringify(data) : undefined,
+                dataType: 'json'
+            });
+        }
+
+        // 健康检查
+        $('#checkHealthBtn').click(function() {
+            apiRequest('/health', 'GET')
+                .done(function(res) {
+                    $healthStatus.removeClass().addClass('badge bg-success').text('健康');
+                    addSystemMessage(`✅ 服务正常，嵌入模型：${res.embedding_model}`);
+                })
+                .fail(function(xhr) {
+                    $healthStatus.removeClass().addClass('badge bg-danger').text('离线');
+                    addSystemMessage(`❌ 无法连接 API: ${xhr.statusText}`);
+                });
+        });
+
+        // 列出索引
+        function loadIndices() {
+            apiRequest('/indices', 'GET')
+                .done(function(res) {
+                    let html = '';
+                    if (res.indices && res.indices.length > 0) {
+                        res.indices.forEach(idx => {
+                            html += `<span class="badge bg-secondary badge-index" data-index="${idx.name}">${idx.name}</span> `;
+                        });
+                        $indicesList.html(html);
+                        // 绑定点击事件选择索引
+                        $('.badge-index').click(function() {
+                            currentIndex = $(this).data('index');
+                            setChatEnabled(true);
+                            addSystemMessage(`📌 已切换到索引: ${currentIndex}`);
+                            $currentIndexDisplay.text(currentIndex);
+                        });
+                    } else {
+                        $indicesList.html('<span class="text-muted">暂无索引</span>');
+                    }
+                })
+                .fail(function(xhr) {
+                    alert('获取索引列表失败: ' + xhr.responseText);
+                });
+        }
+        $('#listIndicesBtn').click(loadIndices);
+
+        // 导入 PDF
+        $('#importPdfBtn').click(function() {
+            const pdfPath = $('#pdfPathInput').val().trim();
+            const indexName = $('#indexNameInput').val().trim();
+            if (!pdfPath) {
+                alert('请输入 PDF 路径');
+                return;
+            }
+            const data = { pdf_path: pdfPath };
+            if (indexName) data.index_name = indexName;
+
+            $(this).prop('disabled', true).text('导入中...');
+            apiRequest('/import', 'POST', data)
+                .done(function(res) {
+                    $importResult.show().text(JSON.stringify(res, null, 2));
+                    addSystemMessage(`📄 导入成功：${res.message}，索引名：${res.index_name}`);
+                    // 刷新索引列表
+                    loadIndices();
+                    // 自动选中新索引
+                    currentIndex = res.index_name;
+                    setChatEnabled(true);
+                    $currentIndexDisplay.text(currentIndex);
+                })
+                .fail(function(xhr) {
+                    $importResult.show().text('错误: ' + xhr.responseText);
+                    alert('导入失败: ' + xhr.responseText);
+                })
+                .always(function() {
+                    $('#importPdfBtn').prop('disabled', false).text('导入 PDF');
+                });
+        });
+
+        // 发送问题
+        function sendQuestion() {
+            const question = $questionInput.val().trim();
+            if (!question) return;
+            if (!currentIndex) {
+                alert('请先选择一个索引或导入 PDF');
+                return;
+            }
+
+            const sessionId = $sessionIdInput.val().trim() || 'default';
+            addUserMessage(question);
+            $questionInput.val('').focus();
+            
+            // 添加临时提示
+            addSystemMessage('🤔 正在思考...');
+
+            const data = {
+                query: question,
+                session_id: sessionId,
+                index_name: currentIndex
+            };
+
+            apiRequest('/chat', 'POST', data)
+                .done(function(res) {
+                    // 移除临时提示（简单处理：移除最后一个系统消息）
+                    $chatHistory.children('.msg-system').last().remove();
+                    addAssistantMessage(res.answer);
+                    if (res.error) {
+                        addSystemMessage(`⚠️ 警告: ${res.error}`);
+                    }
+                })
+                .fail(function(xhr) {
+                    $chatHistory.children('.msg-system').last().remove();
+                    addSystemMessage(`❌ 请求失败: ${xhr.responseText || xhr.statusText}`);
+                });
+        }
+
+        $('#sendQuestionBtn').click(sendQuestion);
+        $questionInput.keypress(function(e) {
+            if (e.which === 13) sendQuestion();
+        });
+
+        // 重置记忆
+        $('#resetMemoryBtn').click(function() {
+            const sessionId = $sessionIdInput.val().trim() || 'default';
+            apiRequest('/memory/reset', 'POST', { session_id: sessionId })
+                .done(function(res) {
+                    addSystemMessage(`🧹 记忆已重置: ${res.message}`);
+                })
+                .fail(function(xhr) {
+                    alert('重置失败: ' + xhr.responseText);
+                });
+        });
+
+        // 初始化：自动检查健康并加载索引
+        $('#checkHealthBtn').click();
+        loadIndices();
+    });
+</script>
+</body>
+</html>
