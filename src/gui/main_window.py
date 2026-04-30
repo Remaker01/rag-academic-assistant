@@ -476,6 +476,7 @@ class MainWindow(QMainWindow):
             if self.agent_manager is None:
                 try:
                     self.agent_manager = AgentManager(
+                        temperature=0.01,
                         index_name=self.current_index_name,
                         verbose=False,
                     )

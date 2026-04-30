@@ -110,11 +110,11 @@ class AgentManager:
 
         # 创建基础 Agent（LangChain 1.0 核心 API）
         # create_agent 底层已基于 LangGraph 实现，自带状态管理、错误处理和流式输出[reference:2]
-        self._base_agent = create_agent(
-            model=self.llm,
-            tools=self.tools,
-            system_prompt=self._system_prompt,
-        )
+        # self._base_agent = create_agent(
+        #     model=self.llm,
+        #     tools=self.tools,
+        #     system_prompt=self._system_prompt,
+        # )
 
         # 为每个会话单独包装 Agent（注入历史 + 自动摘要中间件）
         self._wrapped_agents: Dict[str, Runnable] = {}

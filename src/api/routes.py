@@ -75,19 +75,20 @@ class APIService:
             raise HTTPException(status_code=500, detail=f"问答处理失败: {str(e)}")
 
     def list_indices(self) -> IndexListResponse:
-        """列出所有已存在的索引"""
-        vector_store_path = Path(self.config["vector_store_path"])
+        """列出所有已存在的向量索引（递归遍历子文件夹）"""
+        vector_store_path = str(self.pipeline.vector_store_path)
         indices = []
-        # 查找所有 .faiss 文件，对应的索引名即为文件名（不含扩展名）
-        for faiss_file in vector_store_path.glob("*.faiss"):
-            index_name = faiss_file.stem
-            pkl_file = vector_store_path / f"{index_name}.pkl"
-            exists = pkl_file.exists()
-            indices.append(IndexInfo(
-                name=index_name,
-                exists=exists,
-                path=str(vector_store_path / index_name)
-            ))
+        for root, dirs, files in os.walk(vector_store_path):
+            for file in files:
+                if file.endswith('.faiss'):
+                    index_name = Path(file).stem
+                    pkl_file = os.path.join(root, f"{index_name}.pkl")
+                    exists = os.path.isfile(pkl_file)
+                    indices.append(IndexInfo(
+                        name=index_name,
+                        exists=exists,
+                        path=os.path.join(root, index_name)
+                    ))
         return IndexListResponse(indices=indices)
 
     def import_pdf(self, request: PDFImportRequest) -> PDFImportResponse:

@@ -109,19 +109,19 @@
 
         // 辅助函数：显示消息
         function addSystemMessage(text) {
-            $chatHistory.append(`<div class="msg-system">${text}</div>`);
+            $chatHistory.append('<div class="msg-system">'+text+'</div>');
             scrollChatToBottom();
         }
 
         function addUserMessage(text) {
-            $chatHistory.append(`<div class="msg msg-user"><div class="bubble">${escapeHtml(text)}</div></div>`);
+            $chatHistory.append('<div class="msg msg-user"><div class="bubble">'+escapeHtml(text)+'</div></div>');
             scrollChatToBottom();
         }
 
         function addAssistantMessage(text) {
             // 简单处理换行
             let formatted = escapeHtml(text).replace(/\n/g, '<br>');
-            $chatHistory.append(`<div class="msg msg-assistant"><div class="bubble">${formatted}</div></div>`);
+            $chatHistory.append('<div class="msg msg-assistant"><div class="bubble">'+formatted+'</div></div>');
             scrollChatToBottom();
         }
 
@@ -162,11 +162,11 @@
             apiRequest('/health', 'GET')
                 .done(function(res) {
                     $healthStatus.removeClass().addClass('badge bg-success').text('健康');
-                    addSystemMessage(`✅ 服务正常，嵌入模型：${res.embedding_model}`);
+                    addSystemMessage('✅ 服务正常，嵌入模型：'+res.embedding_model);
                 })
                 .fail(function(xhr) {
                     $healthStatus.removeClass().addClass('badge bg-danger').text('离线');
-                    addSystemMessage(`❌ 无法连接 API: ${xhr.statusText}`);
+                    addSystemMessage('❌ 无法连接 API: '+xhr.statusText);
                 });
         });
 
@@ -176,15 +176,15 @@
                 .done(function(res) {
                     let html = '';
                     if (res.indices && res.indices.length > 0) {
-                        res.indices.forEach(idx => {
-                            html += `<span class="badge bg-secondary badge-index" data-index="${idx.name}">${idx.name}</span> `;
+                        res.indices.forEach(function (idx) {
+                            html += '<span class="badge bg-secondary badge-index" data-index='+idx.name+'>'+idx.name+'</span> ';
                         });
                         $indicesList.html(html);
                         // 绑定点击事件选择索引
                         $('.badge-index').click(function() {
                             currentIndex = $(this).data('index');
                             setChatEnabled(true);
-                            addSystemMessage(`📌 已切换到索引: ${currentIndex}`);
+                            addSystemMessage('📌 已切换到索引: '+currentIndex);
                             $currentIndexDisplay.text(currentIndex);
                         });
                     } else {
@@ -212,7 +212,7 @@
             apiRequest('/import', 'POST', data)
                 .done(function(res) {
                     $importResult.show().text(JSON.stringify(res, null, 2));
-                    addSystemMessage(`📄 导入成功：${res.message}，索引名：${res.index_name}`);
+                    addSystemMessage('📄 导入成功：'+res.message+'，索引名：'+res.index_name);
                     // 刷新索引列表
                     loadIndices();
                     // 自动选中新索引
@@ -257,12 +257,12 @@
                     $chatHistory.children('.msg-system').last().remove();
                     addAssistantMessage(res.answer);
                     if (res.error) {
-                        addSystemMessage(`⚠️ 警告: ${res.error}`);
+                        addSystemMessage('⚠️ 警告: '+res.error);
                     }
                 })
                 .fail(function(xhr) {
                     $chatHistory.children('.msg-system').last().remove();
-                    addSystemMessage(`❌ 请求失败: ${xhr.responseText || xhr.statusText}`);
+                    addSystemMessage('❌ 请求失败: '+(xhr.responseText || xhr.statusText));
                 });
         }
 
@@ -276,7 +276,7 @@
             const sessionId = $sessionIdInput.val().trim() || 'default';
             apiRequest('/memory/reset', 'POST', { session_id: sessionId })
                 .done(function(res) {
-                    addSystemMessage(`🧹 记忆已重置: ${res.message}`);
+                    addSystemMessage('🧹 记忆已重置: '+res.message);
                 })
                 .fail(function(xhr) {
                     alert('重置失败: ' + xhr.responseText);

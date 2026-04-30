@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -51,6 +51,8 @@ class RAGPipeline:
 
         self.embedding_model_name = embedding_model_name or config["embedding_model"]
         self.vector_store_path = Path(vector_store_path or config["vector_store_path"])
+        raw_path = vector_store_path or config["vector_store_path"]
+        self.vector_store_path = Path(raw_path).resolve()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
@@ -133,9 +135,15 @@ class RAGPipeline:
             logger.warning("向量索引为空，无法保存。")
             return
 
-        save_path = self.vector_store_path / index_name
-        self.vector_store.save_local(str(save_path))
-        logger.info(f"FAISS 索引已保存至: {save_path}")
+        # 构建保存路径：vector_store_path / index_name （不带扩展名）
+        save_path = (self.vector_store_path / index_name).resolve()
+        # 确保保存路径的父目录存在（实际上 vector_store_path 已经存在）
+        try:
+            self.vector_store.save_local(str(save_path))
+            logger.info(f"FAISS 索引已保存至: {save_path}.faiss 和 {save_path}.pkl")
+        except Exception as e:
+            logger.error(f"保存索引失败: {e}")
+            raise
 
     def load_index(self, index_name: str = "faiss_index") -> bool:
         """
@@ -147,8 +155,11 @@ class RAGPipeline:
         Returns:
             是否成功加载
         """
-        load_path = self.vector_store_path / index_name
-        if not (load_path.with_suffix(".faiss").exists() and load_path.with_suffix(".pkl").exists()):
+        load_path = (self.vector_store_path / index_name).resolve()
+        faiss_file = Path(str(load_path) + ".faiss")
+        pkl_file = Path(str(load_path) + ".pkl")
+
+        if not (faiss_file.exists() and pkl_file.exists()):
             logger.warning(f"索引文件不存在: {load_path}")
             return False
 
@@ -156,7 +167,7 @@ class RAGPipeline:
             self.vector_store = FAISS.load_local(
                 str(load_path),
                 self.embeddings,
-                allow_dangerous_deserialization=True  # 信任本地保存的索引
+                allow_dangerous_deserialization=True
             )
             logger.info(f"FAISS 索引已从 {load_path} 加载。")
             return True
@@ -165,9 +176,13 @@ class RAGPipeline:
             return False
 
     def index_exists(self, index_name: str = "faiss_index") -> bool:
-        """检查指定名称的索引文件是否存在。"""
-        base_path = self.vector_store_path / index_name
-        return base_path.with_suffix(".faiss").exists() and base_path.with_suffix(".pkl").exists()
+        """检查指定名称的索引文件是否存在。注意索引名称是文件夹，下面还有文件"""
+        base_path = (self.vector_store_path / index_name).resolve()
+        print(base_path)
+        return (
+            (base_path / "index.faiss").exists() and
+            (base_path / "index.pkl").exists()
+        )
 
     # -------------------- 检索与生成 --------------------
     def retrieve(self, query: str, k: int = 4) -> List[Document]:
@@ -223,12 +238,16 @@ class RAGPipeline:
             base_url=config["deepseek_base_url"],
             temperature=temperature,
         )
-
+        system_template = (
+            "你是一位严谨的学术文献助手，仅根据提供的论文片段回答问题。\n"
+            "规则：\n"
+            "1. 回答中引用的任何信息（标题、作者、数值、结论）必须能在片段中找到出处。\n"
+            "2. 如果多个片段提供了矛盾信息，请指出冲突并优先采纳最靠近论文开头的片段。\n"
+            "3. 若片段未提供足够信息，直接回答“根据现有片段无法确定”，不要猜测。\n"
+        )
         # 3. 定义 Prompt 模板
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """你是一位专业的学术文献助手，请基于用户提供的论文片段回答问题。
-如果无法从片段中找到答案，请如实告知，不要编造信息。
-回答时请尽量引用片段中的具体内容。"""),
+            ("system", system_template),
             ("human", """论文片段如下：
 ---
 {context}
