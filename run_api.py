@@ -4,7 +4,8 @@ FastAPI 服务启动入口。
 运行方式：python run_api.py
 或使用 uvicorn：uvicorn run_api:app --reload --host 0.0.0.0 --port 8000
 """
-import uvicorn
+import os, uvicorn
+os.environ['HF_ENDPOINT'] = 'https://aliendao.cn/models/'
 from src.api import create_app
 
 app = create_app()

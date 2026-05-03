@@ -178,7 +178,7 @@ class RAGPipeline:
     def index_exists(self, index_name: str = "faiss_index") -> bool:
         """检查指定名称的索引文件是否存在。注意索引名称是文件夹，下面还有文件"""
         base_path = (self.vector_store_path / index_name).resolve()
-        print(base_path)
+        # print(base_path)
         return (
             (base_path / "index.faiss").exists() and
             (base_path / "index.pkl").exists()

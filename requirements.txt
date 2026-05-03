@@ -1,8 +1,8 @@
 ﻿# 核心框架
 langchain>=1.0.0,<2.0.0
-langchain-community>=1.0.0,<2.0.0
-langchain-core>=1.0.0,<2.0.0
-langchain-huggingface>=1.0.0,<2.0.0
+langchain-community
+langchain-core
+langchain-huggingface
 
 # 向量与检索
 sentence-transformers>=2.2.0,<3.0.0
