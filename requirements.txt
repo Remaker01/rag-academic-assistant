@@ -7,6 +7,8 @@ langchain-huggingface
 # 向量与检索
 sentence-transformers>=2.2.0,<3.0.0
 faiss-cpu>=1.7.0,<2.0.0
+rank_bm25>=0.2.0,<0.3.0
+jieba>=0.42.0,<0.43.0
 
 # 大模型 API
 openai>=1.0.0,<2.0.0
@@ -19,7 +21,9 @@ unstructured>=0.11.0,<0.12.0
 # GUI
 PySide6>=6.5.0,<7.0.0
 
-# 辅助工具
+# 评估（可选）
+ragas>=0.2.0,<1.0.0
+datasets>=3.0.0,<4.0.0
 python-dotenv>=1.0.0,<2.0.0
 tiktoken>=0.5.0,<0.6.0
 rich>=13.0.0,<14.0.0

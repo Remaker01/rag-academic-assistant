@@ -36,7 +36,7 @@ def create_retriever_tool(index_name: str = "faiss_index"):
     @tool
     def document_retriever(query: str) -> str:
         """
-        检索已导入的学术论文内容。
+        检索已导入的学术论文内容（混合检索 + Reranker 重排）。
         当用户询问论文中的具体信息、概念、方法、数据或结论时使用。
         
         Args:
@@ -45,7 +45,9 @@ def create_retriever_tool(index_name: str = "faiss_index"):
         Returns:
             从论文中检索到的相关文本片段
         """
-        docs = pipeline.retrieve(query, k=4)
+        # 宽召回（20条） + Reranker 精排（4条）
+        candidates = pipeline.retrieve_hybrid(query, k=20, dense_k=30, bm25_k=30)
+        docs = pipeline.rerank(query, candidates, top_k=4)
         if not docs:
             return "未找到相关文档片段。"
 
@@ -61,7 +63,7 @@ def create_retriever_tool(index_name: str = "faiss_index"):
 
 
 def create_llm(
-    model: str = "deepseek-chat",
+    model: str = "deepseek-v4-flash",
     temperature: float = 0.1,
 ) -> ChatOpenAI:
     """创建 DeepSeek LLM 客户端。"""

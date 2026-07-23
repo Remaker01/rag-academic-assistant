@@ -3,13 +3,17 @@
 RAG 核心管道：文档加载、分块、向量嵌入、FAISS 索引、检索与生成。
 """
 import os
+import pickle
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
+import jieba
+from sentence_transformers import CrossEncoder
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -19,6 +23,11 @@ from langchain_core.runnables import RunnablePassthrough
 from ..utils import load_config, setup_logger
 
 logger = setup_logger("rag")
+
+
+def _jieba_tokenize(text: str) -> List[str]:
+    """使用 jieba 对中文文本分词，英文保持原样。"""
+    return list(jieba.cut(text))
 
 
 class RAGPipeline:
@@ -70,6 +79,14 @@ class RAGPipeline:
         # FAISS 索引实例（懒加载）
         self.vector_store: Optional[FAISS] = None
 
+        # BM25 稀疏检索器（懒加载）
+        self._bm25_retriever: Optional[BM25Retriever] = None
+        self._last_documents: List[Document] = []
+
+        # Reranker 模型（懒加载，首次 rerank() 调用时初始化）
+        self._reranker: Optional[CrossEncoder] = None
+        self._reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
+
         # 文本分割器
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
@@ -111,7 +128,7 @@ class RAGPipeline:
     # -------------------- 向量索引管理 --------------------
     def build_index(self, documents: List[Document]) -> None:
         """
-        根据文档块列表构建 FAISS 向量索引。
+        根据文档块列表构建 FAISS 向量索引和 BM25 稀疏索引。
 
         Args:
             documents: Document 列表
@@ -124,9 +141,18 @@ class RAGPipeline:
         self.vector_store = FAISS.from_documents(documents, self.embeddings)
         logger.info("FAISS 索引构建完成。")
 
+        # 同步构建 BM25 索引
+        logger.info("正在构建 BM25 稀疏索引...")
+        self._bm25_retriever = BM25Retriever.from_documents(
+            documents,
+            preprocess_func=_jieba_tokenize,
+        )
+        self._last_documents = documents
+        logger.info("BM25 稀疏索引构建完成。")
+
     def save_index(self, index_name: str = "faiss_index") -> None:
         """
-        将当前向量索引持久化到磁盘。
+        将当前向量索引持久化到磁盘（包含 BM25 索引）。
 
         Args:
             index_name: 索引文件名（不含扩展名）
@@ -140,14 +166,21 @@ class RAGPipeline:
         # 确保保存路径的父目录存在（实际上 vector_store_path 已经存在）
         try:
             self.vector_store.save_local(str(save_path))
-            logger.info(f"FAISS 索引已保存至: {save_path}.faiss 和 {save_path}.pkl")
+            logger.info(f"FAISS 索引已保存至: {save_path}")
+
+            # 保存 BM25 索引
+            if self._bm25_retriever is not None:
+                bm25_path = save_path / "bm25.pkl"
+                with open(bm25_path, "wb") as f:
+                    pickle.dump(self._bm25_retriever, f)
+                logger.info(f"BM25 索引已保存至: {bm25_path}")
         except Exception as e:
             logger.error(f"保存索引失败: {e}")
             raise
 
     def load_index(self, index_name: str = "faiss_index") -> bool:
         """
-        从磁盘加载已保存的 FAISS 向量索引。
+        从磁盘加载已保存的 FAISS + BM25 索引。
 
         Args:
             index_name: 索引文件名（不含扩展名）
@@ -156,11 +189,8 @@ class RAGPipeline:
             是否成功加载
         """
         load_path = (self.vector_store_path / index_name).resolve()
-        faiss_file = Path(str(load_path) + ".faiss")
-        pkl_file = Path(str(load_path) + ".pkl")
-
-        if not (faiss_file.exists() and pkl_file.exists()):
-            logger.warning(f"索引文件不存在: {load_path}")
+        if not self.index_exists(index_name):
+            logger.warning(f"索引目录不存在: {load_path}")
             return False
 
         try:
@@ -170,6 +200,16 @@ class RAGPipeline:
                 allow_dangerous_deserialization=True
             )
             logger.info(f"FAISS 索引已从 {load_path} 加载。")
+
+            # 加载 BM25 索引（可选，不影响主流程）
+            bm25_path = load_path / "bm25.pkl"
+            if bm25_path.exists():
+                with open(bm25_path, "rb") as f:
+                    self._bm25_retriever = pickle.load(f)
+                logger.info(f"BM25 索引已从 {bm25_path} 加载。")
+            else:
+                logger.info("未找到 BM25 索引文件，仅使用 Dense 检索。")
+
             return True
         except Exception as e:
             logger.error(f"加载 FAISS 索引失败: {e}")
@@ -202,6 +242,135 @@ class RAGPipeline:
         docs = self.vector_store.similarity_search(query, k=k)
         logger.info(f"检索完成，查询: '{query[:50]}...' 返回 {len(docs)} 个结果。")
         return docs
+
+    def retrieve_hybrid(
+        self,
+        query: str,
+        k: int = 4,
+        dense_weight: float = 0.6,
+        dense_k: int = 20,
+        bm25_k: int = 20,
+    ) -> List[Document]:
+        """
+        混合检索：Dense (FAISS) + Sparse (BM25) 加权融合。
+
+        使用 Reciprocal Rank Fusion (RRF) 合并两路结果，
+        再按融合分数取 top-k。
+
+        Args:
+            query: 用户查询
+            k: 最终返回的文档块数量
+            dense_weight: Dense 检索权重（0~1），BM25 权重 = 1 - dense_weight
+            dense_k: Dense 检索的宽召回数量
+            bm25_k: BM25 检索的宽召回数量
+
+        Returns:
+            按相关性排序的 Document 列表
+        """
+        if self.vector_store is None:
+            raise ValueError("向量索引尚未初始化，请先构建或加载索引。")
+
+        # 1. Dense 检索
+        dense_docs = self.vector_store.similarity_search(query, k=dense_k)
+        # 2. BM25 检索
+        bm25_docs: List[Document] = []
+        if self._bm25_retriever is not None:
+            bm25_docs = self._bm25_retriever.invoke(query)[:bm25_k]
+
+        # 3. RRF 融合
+        # 使用 page_content + chunk_id 作为文档唯一标识
+        def _doc_key(doc: Document) -> Tuple[str, int]:
+            return (doc.metadata.get("source", ""), doc.metadata.get("chunk_id", -1))
+
+        def _rrf_score(rank: int, k: int = 60) -> float:
+            return 1.0 / (k + rank + 1)
+
+        # 为 dense 结果打分
+        score_map: Dict[Tuple[str, int], float] = {}
+        for rank, doc in enumerate(dense_docs):
+            key = _doc_key(doc)
+            score_map[key] = score_map.get(key, 0.0) + dense_weight * _rrf_score(rank)
+
+        # 为 BM25 结果打分
+        bm25_weight = 1.0 - dense_weight
+        for rank, doc in enumerate(bm25_docs):
+            key = _doc_key(doc)
+            score_map[key] = score_map.get(key, 0.0) + bm25_weight * _rrf_score(rank)
+
+        # 4. 按分数降序排序，取 top-k
+        ranked = sorted(score_map.items(), key=lambda x: -x[1])
+
+        # 将 key 映射回原始的 Document 对象（优先保留 dense 版本）
+        doc_by_key: Dict[Tuple[str, int], Document] = {}
+        for doc in dense_docs:
+            doc_by_key[_doc_key(doc)] = doc
+        for doc in bm25_docs:
+            key = _doc_key(doc)
+            if key not in doc_by_key:
+                doc_by_key[key] = doc
+
+        result = [doc_by_key[key] for key, _ in ranked[:k]]
+        logger.info(
+            f"混合检索完成，dense={len(dense_docs)}, bm25={len(bm25_docs)}, "
+            f"融合后返回 {len(result)} 个结果。"
+        )
+        return result
+
+    def rerank(
+        self,
+        query: str,
+        docs: List[Document],
+        top_k: int = 4,
+    ) -> List[Document]:
+        """
+        使用 Cross-Encoder 对检索结果重排序。
+
+        采用 BAAI/bge-reranker-v2-m3 模型对(query, doc)逐对打分，
+        保留 top_k 个最相关的片段。
+
+        Args:
+            query: 用户原始查询
+            docs: 待重排序的文档列表（通常来自混合检索的宽召回结果）
+            top_k: 最终保留的文档数量
+
+        Returns:
+            重排序后的 Document 列表（按相关性降序）
+        """
+        if not docs:
+            return []
+
+        # 懒加载 Reranker 模型
+        if self._reranker is None:
+            logger.info(f"正在加载 Reranker 模型: {self._reranker_model_name}...")
+            try:
+                self._reranker = CrossEncoder(
+                    self._reranker_model_name,
+                    device="cpu",
+                )
+                logger.info("Reranker 模型加载完成。")
+            except Exception as e:
+                logger.warning(f"Reranker 模型加载失败: {e}，退回原始排序。")
+                return docs[:top_k]
+
+        # 构建 (query, doc_text) 对
+        pairs = [(query, doc.page_content) for doc in docs]
+
+        # 打分（CrossEncoder 返回每个 pair 的分数）
+        try:
+            scores = self._reranker.predict(pairs)
+        except Exception as e:
+            logger.warning(f"Reranker 打分失败: {e}，退回原始排序。")
+            return docs[:top_k]
+
+        # 按分数降序重排
+        scored = list(zip(docs, scores))
+        scored.sort(key=lambda x: -x[1])
+
+        result = [doc for doc, _ in scored[:top_k]]
+        logger.info(
+            f"Reranker 重排序完成，输入 {len(docs)} 条，返回 {len(result)} 条。"
+        )
+        return result
 
     def format_docs(self, docs: List[Document]) -> str:
         """将检索到的文档块拼接为上下文字符串。"""
