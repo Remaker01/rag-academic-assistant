@@ -1,0 +1,38 @@
+[
+    {
+        "question": "What is the main contribution of this paper?",
+        "ground_truth": "CORE Contrastive Masked Feature Reconstruction"
+    },
+    {
+        "question": "what is MFR",
+        "ground_truth": "masked feature reconstruction"
+    },
+    {
+        "question": "which datasets are used for node classification",
+        "ground_truth": "Cora Citeseer PubMed Wiki-CS Computer Photo CS Physics PPI"
+    },
+    {
+        "question": "what accuracy does CORE achieve on Cora",
+        "ground_truth": "84.2"
+    },
+    {
+        "question": "what is the relationship between MFR and GCL",
+        "ground_truth": "MFR can be viewed as a special case of node-level GCL"
+    },
+    {
+        "question": "what baseline methods are compared",
+        "ground_truth": "GCN GAT GAE GMI GCA DGI MVGRL"
+    },
+    {
+        "question": "how does CORE generate positive and negative samples",
+        "ground_truth": "positive and negative samples drawn exclusively from the masked nodes"
+    },
+    {
+        "question": "what graph classification datasets are used",
+        "ground_truth": "IMDB-B IMDB-M PROTEINS COLLAB MUTAG REDDIT-B NCI1"
+    },
+    {
+        "question": "what does CORE stand for",
+        "ground_truth": "Contrastive Masked Feature Reconstruction on Graphs"
+    }
+]
