@@ -56,13 +56,17 @@
             <hr>
             <div class="row g-2">
                 <div class="col-md-8">
-                    <input type="text" class="form-control" id="pdfPathInput" placeholder="PDF 文件绝对路径，例如 C:/papers/example.pdf">
+                    <div class="input-group">
+                        <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+                        <button class="btn btn-outline-secondary" id="selectPdfBtn">📂 选择文件</button>
+                        <span id="selectedFileName" class="form-control" style="background:#f8f9fa;cursor:default;">未选择文件</span>
+                    </div>
                 </div>
                 <div class="col-md-4">
                     <input type="text" class="form-control" id="indexNameInput" placeholder="索引名称 (可选)">
                 </div>
                 <div class="col-md-12 mt-2">
-                    <button class="btn btn-success" id="importPdfBtn">导入 PDF</button>
+                    <button class="btn btn-success" id="importPdfBtn" disabled>导入 PDF</button>
                 </div>
             </div>
             <div id="importResult" class="response-area mt-3" style="display:none;"></div>
@@ -197,19 +201,49 @@
         }
         $('#listIndicesBtn').click(loadIndices);
 
-        // 导入 PDF
+        // ---------- PDF 文件选择 ----------
+        let selectedPdfFile = null;
+
+        $('#selectPdfBtn').click(function() {
+            $('#pdfFileInput').click();
+        });
+
+        $('#pdfFileInput').change(function() {
+            const files = this.files;
+            if (files && files.length > 0) {
+                selectedPdfFile = files[0];
+                $('#selectedFileName').text('📄 ' + selectedPdfFile.name);
+                $('#importPdfBtn').prop('disabled', false);
+                $importResult.hide();
+            } else {
+                selectedPdfFile = null;
+                $('#selectedFileName').text('未选择文件');
+                $('#importPdfBtn').prop('disabled', true);
+            }
+        });
+
+        // 导入 PDF（文件上传方式）
         $('#importPdfBtn').click(function() {
-            const pdfPath = $('#pdfPathInput').val().trim();
-            const indexName = $('#indexNameInput').val().trim();
-            if (!pdfPath) {
-                alert('请输入 PDF 路径');
+            if (!selectedPdfFile) {
+                alert('请先选择 PDF 文件');
                 return;
             }
-            const data = { pdf_path: pdfPath };
-            if (indexName) data.index_name = indexName;
 
-            $(this).prop('disabled', true).text('导入中...');
-            apiRequest('/import', 'POST', data)
+            const formData = new FormData();
+            formData.append('file', selectedPdfFile);
+            const indexName = $('#indexNameInput').val().trim();
+            if (indexName) formData.append('index_name', indexName);
+
+            const btn = $(this);
+            btn.prop('disabled', true).text('导入中...');
+            $.ajax({
+                url: $apiBase.val().trim() + '/upload',
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                dataType: 'json'
+            })
                 .done(function(res) {
                     $importResult.show().text(JSON.stringify(res, null, 2));
                     addSystemMessage('📄 导入成功：'+res.message+'，索引名：'+res.index_name);
@@ -219,13 +253,18 @@
                     currentIndex = res.index_name;
                     setChatEnabled(true);
                     $currentIndexDisplay.text(currentIndex);
+                    // 清空文件选择
+                    selectedPdfFile = null;
+                    $('#pdfFileInput').val('');
+                    $('#selectedFileName').text('未选择文件');
+                    $('#importPdfBtn').prop('disabled', true);
                 })
                 .fail(function(xhr) {
                     $importResult.show().text('错误: ' + xhr.responseText);
                     alert('导入失败: ' + xhr.responseText);
                 })
                 .always(function() {
-                    $('#importPdfBtn').prop('disabled', false).text('导入 PDF');
+                    btn.prop('disabled', false).text('导入 PDF');
                 });
         });
 

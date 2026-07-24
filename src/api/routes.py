@@ -4,7 +4,10 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict
 
-from fastapi import FastAPI, HTTPException
+import shutil
+import tempfile
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent import AgentManager
@@ -141,6 +144,28 @@ class APIService:
             session_id=request.session_id,
         )
 
+    async def upload_pdf(self, file: UploadFile, index_name: Optional[str] = None) -> PDFImportResponse:
+        """接收上传的 PDF 文件，保存后导入"""
+        # 校验文件类型
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="仅支持 PDF 文件")
+
+        # 保存到 data/pdfs/ 目录
+        pdfs_dir = Path(self.config.get("vector_store_path", "./data/vector_store")).parent / "pdfs"
+        pdfs_dir.mkdir(parents=True, exist_ok=True)
+        dest = pdfs_dir / file.filename
+
+        try:
+            with dest.open("wb") as f:
+                shutil.copyfileobj(file.file, f)
+        finally:
+            await file.close()
+
+        # 重用现有导入逻辑
+        from src.api.models import PDFImportRequest
+        req = PDFImportRequest(pdf_path=str(dest), index_name=index_name)
+        return self.import_pdf(req)
+
     def health_check(self) -> HealthResponse:
         """健康检查"""
         # 测试 DeepSeek 连通性（轻量检查，不实际调用）
@@ -183,6 +208,14 @@ def create_app() -> FastAPI:
 
     service = get_service()
 
+    # 获取 index.html 的绝对路径（与项目根目录平级）
+    _index_html = Path(__file__).resolve().parent.parent.parent / "index.html"
+
+    @app.get("/", include_in_schema=False)
+    async def root():
+        """返回前端主页"""
+        return FileResponse(str(_index_html))
+
     @app.get("/health", response_model=HealthResponse, tags=["系统"])
     async def health():
         """健康检查端点"""
@@ -202,6 +235,14 @@ def create_app() -> FastAPI:
         - **index_name**: 可选，自定义索引名称；若不指定则使用文件名
         """
         return service.import_pdf(request)
+
+    @app.post("/upload", response_model=PDFImportResponse, tags=["索引管理"])
+    async def upload_pdf(
+        file: UploadFile = File(..., description="PDF 文件"),
+        index_name: Optional[str] = Form(None, description="索引名称 (可选)"),
+    ):
+        """上传 PDF 文件并自动构建向量索引"""
+        return await service.upload_pdf(file, index_name)
 
     @app.post("/chat", response_model=ChatResponse, tags=["问答"])
     async def chat(request: ChatRequest):
