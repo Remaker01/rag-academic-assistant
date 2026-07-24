@@ -23,7 +23,7 @@ def test_deepseek_api(config: dict):
     
     try:
         response = client.chat.completions.create(
-            model="deepseek-chat",  # DeepSeek 官方模型名
+            model="deepseek-v4-flash",  # DeepSeek 官方模型名
             messages=[
                 {"role": "user", "content": "请回复一个简短的英文单词 以确认连通。"}
             ],

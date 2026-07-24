@@ -379,7 +379,7 @@ class RAGPipeline:
     def generate(
         self,
         query: str,
-        llm_model: str = "deepseek-chat",
+        llm_model: str = "deepseek-v4-flash",
         temperature: float = 0.1,
         k: int = 4,
     ) -> Dict[str, Any]:

@@ -74,7 +74,7 @@ class TestAgentInit:
 
                 mgr = AgentManager(
                     index_name="custom_index",
-                    llm_model="deepseek-chat",
+                    llm_model="deepseek-v4-flash",
                     temperature=0.5,
                     max_history_tokens=2000,
                     keep_recent_messages=5,

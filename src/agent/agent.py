@@ -84,7 +84,7 @@ class AgentManager:
     def __init__(
         self,
         index_name: str = "faiss_index",
-        llm_model: str = "deepseek-chat",
+        llm_model: str = "deepseek-v4-flash",
         temperature: float = 0.1,
         max_history_tokens: int = 4000,      # 对话历史最大 token 数
         keep_recent_messages: int = 10,      # 保留最近 N 条消息（兜底）

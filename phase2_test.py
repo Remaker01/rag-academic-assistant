@@ -42,7 +42,7 @@ def main():
     logger.info(f"{'='*50}")
 
     try:
-        result = rag.generate(query=test_query,llm_model='deepseek-chat', k=3)
+        result = rag.generate(query=test_query,llm_model='deepseek-v4-flash', k=3)
 
         print("\n" + "="*60)
         print("【检索到的文档片段】")
